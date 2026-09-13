@@ -2,6 +2,12 @@
 
 A Python tool that designs and ranks candidate CRISPR/Cas9 single guide RNAs (sgRNAs) for any human gene, given just a gene symbol.
 
+
+## Roadmap
+
+- [ ] Off-target scoring: align each candidate guide against a reference genome (planned: Bowtie2 against a single chromosome or small model genome) and score using mismatch-based CFD scoring
+- [ ] Support for additional Cas variants (Cas12a) with different PAM requirements
+
 ## What it does
 
 1. **Fetch** — retrieves the coding mRNA sequence for a given gene from NCBI (via Biopython/Entrez)
