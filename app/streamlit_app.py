@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import sys
 import os
 
-# Allow importing from src/
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fetch_sequence import fetch_gene_sequence
@@ -18,18 +17,32 @@ st.title("🧬 CRISPR Guide RNA Designer")
 st.write(
     "Enter a human gene symbol to find and rank candidate CRISPR/Cas9 guide RNAs. "
     "Guides are scanned for NGG PAM sites, filtered by GC content and poly-T runs, "
-    "and scored using a heuristic inspired by Doench et al. 2016 (Rule Set 2)."
+    "and scored using a heuristic inspired by Doench et al. 2016 (Rule Set 2). "
+    "This is an educational/portfolio tool, not validated for lab use."
 )
 
 gene_symbol = st.text_input("Gene symbol (e.g. TP53, BRCA1)", "")
 
-if st.button("Design Guides") and gene_symbol:
-    with st.spinner(f"Fetching sequence for {gene_symbol}..."):
+if st.button("Design Guides"):
+    if not gene_symbol.strip():
+        st.warning("Please enter a gene symbol.")
+        st.stop()
+
+    clean_symbol = gene_symbol.strip().upper()
+
+    with st.spinner(f"Fetching sequence for {clean_symbol}..."):
         try:
-            seq_record = fetch_gene_sequence(gene_symbol.strip().upper())
-        except Exception as e:
-            st.error(f"Could not fetch gene: {e}")
+            seq_record = fetch_gene_sequence(clean_symbol)
+        except ValueError as e:
+            st.error(f"Gene not found: {e}. Check the spelling, or try the official HGNC symbol.")
             st.stop()
+        except Exception as e:
+            st.error(f"Unexpected error while fetching from NCBI: {e}. This may be a temporary network/API issue — try again in a moment.")
+            st.stop()
+
+    if len(seq_record.seq) < 25:
+        st.error(f"Fetched sequence is too short ({len(seq_record.seq)} bp) to design guides. This gene record may be incomplete.")
+        st.stop()
 
     st.success(f"Fetched {seq_record.id} — {len(seq_record.seq)} bp")
 
@@ -37,7 +50,7 @@ if st.button("Design Guides") and gene_symbol:
         guide_df = find_guides(seq_record.seq)
 
     if guide_df.empty:
-        st.warning("No candidate guides found (no NGG PAM sites detected).")
+        st.warning("No candidate guides found — no NGG PAM sites detected in this sequence. This is unusual for a gene of typical length; double check the gene symbol.")
         st.stop()
 
     st.write(f"Found **{len(guide_df)}** candidate guides before filtering.")
@@ -46,7 +59,7 @@ if st.button("Design Guides") and gene_symbol:
         filtered_df = filter_guides(guide_df)
 
     if filtered_df.empty:
-        st.warning("No guides passed filtering. Try a different gene or relax filter criteria.")
+        st.warning("No guides passed GC content / poly-T filtering. This can happen with very short or unusual sequences.")
         st.stop()
 
     with st.spinner("Scoring guides..."):
@@ -54,20 +67,17 @@ if st.button("Design Guides") and gene_symbol:
 
     st.write(f"**{len(filtered_df)}** guides passed filtering, ranked by predicted efficiency below:")
 
-    # Display ranked table
     display_df = scored_df[["guide_seq", "strand", "position", "pam_seq", "gc_content", "efficiency_score"]]
     st.dataframe(display_df, width="stretch")
 
-    # Download button
     csv = display_df.to_csv(index=False)
     st.download_button(
         "Download results as CSV",
         data=csv,
-        file_name=f"{gene_symbol.upper()}_guides.csv",
+        file_name=f"{clean_symbol}_guides.csv",
         mime="text/csv"
     )
 
-    # Plot guide positions along the gene
     st.subheader("Guide positions along the gene")
     fig, ax = plt.subplots(figsize=(10, 2))
     plus_guides = scored_df[scored_df["strand"] == "+"]
@@ -79,6 +89,3 @@ if st.button("Design Guides") and gene_symbol:
     ax.set_xlabel("Position (bp)")
     ax.legend(loc="upper right")
     st.pyplot(fig)
-
-elif gene_symbol == "" and st.session_state.get("clicked"):
-    st.warning("Please enter a gene symbol.")
