@@ -7,6 +7,8 @@ A Python tool that designs and ranks candidate CRISPR/Cas9 single guide RNAs (sg
 
 - [ ] Off-target scoring: align each candidate guide against a reference genome (planned: Bowtie2 against a single chromosome or small model genome) and score using mismatch-based CFD scoring
 - [ ] Support for additional Cas variants (Cas12a) with different PAM requirements
+- [ ] Whole-genome off-target search
+- [ ] Genome-absolute coordinates for on-target site detection
 
 ## What it does
 
@@ -32,11 +34,27 @@ python -m streamlit run app/streamlit_app.py
 ```
 Enter any human gene symbol (e.g. `TP53`, `BRCA1`) and get a ranked, downloadable list of candidate guides with an interactive position plot.
 
+
+## Off-target scoring (Phase 2)
+
+Off-target risk is precomputed for demo genes (TP53, BRCA1) and loaded by the app when available.
+
+**Pipeline:** guides → Bowtie2 alignment against the chr17 reference (run in Colab) → SAM parsing → simplified CFD-inspired scoring → CSVs in `data/` → merged into the Streamlit table.
+
+**Output columns:** `offtarget_hits`, `max_offtarget_risk`, `offtarget_status` (`scored`, `no off-targets found`, `high repeat content`, `not scored`).
+
+**Why precomputed:** Bowtie2 does not run on Windows or typical deployment environments.
+
+
 ## Limitations
 
 - On-target scoring is a simplified heuristic, not the full trained Doench Rule Set 2 / Azimuth model
 - No off-target scoring in this version (planned as a follow-up phase using genome alignment)
 - Currently supports human genes with a fetchable RefSeq (NM_) mRNA record
+- Off-target search covers **chromosome 17 only**, not the whole genome. "No off-targets found" means none on chr17.
+- Only the **top 20** on-target guides per demo gene are scored. Other genes show on-target scores only.
+- On-target site detection is a placeholder: a guide with exactly one 0-mismatch hit is treated as its on-target site. A full fix needs converting mRNA-relative positions to genome coordinates.
+- Off-target scoring is a simplified CFD-inspired heuristic, not validated for lab use.
 
 ## Tech stack
 
