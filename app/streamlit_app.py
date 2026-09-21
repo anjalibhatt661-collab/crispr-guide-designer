@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(APP_DIR, "..", "src"))
+DATA_DIR = os.path.join(APP_DIR, "..", "data")
 
 from fetch_sequence import fetch_gene_sequence
 from find_guides import find_guides
@@ -12,6 +14,49 @@ from filter_guides import filter_guides
 from score_guides import score_all_guides
 
 st.set_page_config(page_title="CRISPR Guide Designer", layout="wide")
+
+OFFTARGET_COLS = ["guide_seq", "num_offtarget_hits", "max_offtarget_risk", "total_offtarget_risk"]
+MAX_HITS_DISPLAY = 100  # above this, show ">100" and flag as repeat-like
+
+
+@st.cache_data
+def load_offtarget_scores(gene_symbol):
+    """
+    Load precomputed off-target scores if available for this gene.
+    Returns (dataframe or None, warning message or None).
+    """
+    path = os.path.join(DATA_DIR, f"{gene_symbol}_guides_with_offtarget.csv")
+    if not os.path.exists(path):
+        return None, None
+    try:
+        df = pd.read_csv(path)
+    except Exception as e:
+        return None, f"Could not read the off-target file ({e}). Showing on-target scores only."
+    missing = [c for c in OFFTARGET_COLS if c not in df.columns]
+    if missing:
+        return None, f"Off-target file is missing columns {missing}. Showing on-target scores only."
+    # One row per guide sequence so the merge cannot duplicate rows
+    df = df[OFFTARGET_COLS].drop_duplicates(subset="guide_seq")
+    return df, None
+
+
+def offtarget_status(hits):
+    if pd.isna(hits):
+        return "not scored"
+    if hits > MAX_HITS_DISPLAY:
+        return "high repeat content"
+    if hits == 0:
+        return "no off-targets found"
+    return "scored"
+
+
+def hits_display(hits):
+    if pd.isna(hits):
+        return ""
+    if hits > MAX_HITS_DISPLAY:
+        return f">{MAX_HITS_DISPLAY}"
+    return str(int(hits))
+
 
 st.title("🧬 CRISPR Guide RNA Designer")
 st.write(
@@ -65,9 +110,33 @@ if st.button("Design Guides"):
     with st.spinner("Scoring guides..."):
         scored_df = score_all_guides(filtered_df)
 
-    st.write(f"**{len(filtered_df)}** guides passed filtering, ranked by predicted efficiency below:")
+    offtarget_df, offtarget_warning = load_offtarget_scores(clean_symbol)
+    if offtarget_warning:
+        st.warning(offtarget_warning)
 
-    display_df = scored_df[["guide_seq", "strand", "position", "pam_seq", "gc_content", "efficiency_score"]]
+    has_offtarget = offtarget_df is not None
+
+    if has_offtarget:
+        scored_df = scored_df.merge(offtarget_df, on="guide_seq", how="left")
+        n_scored = int(scored_df["num_offtarget_hits"].notna().sum())
+        st.info(
+            f"Off-target scores available for {clean_symbol} "
+            f"(precomputed against chromosome 17, top 20 guides by on-target score). "
+            f"{n_scored} of {len(scored_df)} listed guides have off-target results."
+        )
+        scored_df["offtarget_hits"] = scored_df["num_offtarget_hits"].apply(hits_display)
+        scored_df["offtarget_status"] = scored_df["num_offtarget_hits"].apply(offtarget_status)
+    else:
+        st.caption(f"Off-target scoring not precomputed for {clean_symbol} — showing on-target scores only.")
+
+    st.write(f"**{len(scored_df)}** guides passed filtering, ranked by predicted efficiency below:")
+
+    base_cols = ["guide_seq", "strand", "position", "pam_seq", "gc_content", "efficiency_score"]
+    if has_offtarget:
+        display_df = scored_df[base_cols + ["offtarget_hits", "max_offtarget_risk", "offtarget_status"]]
+    else:
+        display_df = scored_df[base_cols]
+
     st.dataframe(display_df, width="stretch")
 
     csv = display_df.to_csv(index=False)
@@ -89,3 +158,4 @@ if st.button("Design Guides"):
     ax.set_xlabel("Position (bp)")
     ax.legend(loc="upper right")
     st.pyplot(fig)
+    plt.close(fig)
