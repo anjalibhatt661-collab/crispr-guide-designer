@@ -2,6 +2,8 @@
 
 A Python tool that designs and ranks candidate CRISPR/Cas9 single guide RNAs (sgRNAs) for any human gene, given just a gene symbol.
 
+**Live app:** https://a-crispr-guide-designer.streamlit.app/
+
 
 ## Roadmap
 
